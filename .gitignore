@@ -1,0 +1,24 @@
+# PlatformIO build çıktısı
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Derleme çıktıları
+build/
+dist/
+*.elf
+*.bin
+*.hex
+*.map
+
+# Geçici dosyalar
+*.o
+*.d
+*.su
+*.log
+.DS_Store
+Thumbs.db
