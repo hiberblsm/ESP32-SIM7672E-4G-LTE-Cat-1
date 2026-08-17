@@ -1,13 +1,23 @@
-# ESP32-S3 + SIM7672E LTE Cat-1 Geliştirme Kiti
+# ESP32-S3 + SIM7672E 4G LTE Cat-1 Geliştirme Kiti
 
-> **SIM7672E 4G LTE Cat-1** modülü için bağımsız, üretime hazır test ve uygulama projeleri.
-> HTTP · TCP · UDP · MQTT · SMS · DTMF · Röle Kontrolü · Sıcaklık Ölçümü
+<p align="center">
+  <img src="docs/images/sim7672e-1.png" alt="SIM7672E 4G LTE Cat-1 GSM Modül" width="45%"/>
+  <img src="docs/images/sim7672e-2.png" alt="SIM7672E 4G LTE Cat-1 GSM Modül" width="45%"/>
+</p>
+
+> **📦 Bu proje şu ürüne aittir:**
+> [**SIM7672E 4G LTE Cat-1 GSM Modül — SIMCom IoT Haberleşme Modülü**](https://www.hiber.com.tr/sim7672e-4g-lte-cat-1-gsm-modul--simcom-iot-haberlesme-modulu)
+
+**SIM7672E 4G LTE Cat-1** modülü için bağımsız, üretime hazır test ve uygulama projeleri.
+HTTP · TCP · UDP · MQTT · SMS · DTMF · Röle Kontrolü · Sıcaklık Ölçümü
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform: ESP32-S3](https://img.shields.io/badge/Platform-ESP32--S3-blue.svg)](https://www.espressif.com/)
 [![Framework: Arduino](https://img.shields.io/badge/Framework-Arduino-orange.svg)](https://www.arduino.cc/)
+[![Ürünü Satın Al](https://img.shields.io/badge/%F0%9F%9B%92-Sat%C4%B1n%20Al-blue.svg)](https://www.hiber.com.tr/sim7672e-4g-lte-cat-1-gsm-modul--simcom-iot-haberlesme-modulu)
 
 **Geliştirici:** [Hiber Bilişim](https://www.hiber.com.tr) — [hibersoft.com.tr](https://www.hibersoft.com.tr)
+**Ürün:** [SIM7672E 4G LTE Cat-1 GSM Modül](https://www.hiber.com.tr/sim7672e-4g-lte-cat-1-gsm-modul--simcom-iot-haberlesme-modulu)
 **Lisans:** MIT © 2026
 
 ---
@@ -555,6 +565,8 @@ C: GPIO 13 + 4.7 kΩ pull-up direnci bağlı mı kontrol edin. Kabloları kısa 
 
 ```
 esp32-7072e/
+├── docs/
+│   └── images/               ← Ürün görselleri
 ├── examples/
 │   ├── 01_SerialTest/        ← Modem tanılama
 │   ├── 02_HTTPTest/          ← HTTP GET/POST + token
@@ -565,8 +577,8 @@ esp32-7072e/
 │   ├── 07_SmsRelayControl/   ← SMS ile röle
 │   ├── 08_DtmfRelayControl/  ← DTMF ile röle
 │   └── 09_SmsTemperature/    ← DS18B20 + SMS
-├── library.properties
-├── keywords.txt
+├── README.md
+├── .gitignore
 └── LICENSE
 ```
 
