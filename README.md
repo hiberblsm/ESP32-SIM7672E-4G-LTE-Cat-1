@@ -1,8 +1,8 @@
 # ESP32-S3 + SIM7672E 4G LTE Cat-1 Geliştirme Kiti
 
 <p align="center">
-  <img src="docs/images/sim7672e-1.jpg" alt="SIM7672E 4G LTE Cat-1 GSM Modül" width="45%"/>
-  <img src="docs/images/sim7672e-2.jpg" alt="SIM7672E 4G LTE Cat-1 GSM Modül" width="45%"/>
+  <img src="../docs/images/sim7672e-1.jpg" alt="SIM7672E 4G LTE Cat-1 GSM Modül" width="45%"/>
+  <img src="../docs/images/sim7672e-2.jpg" alt="SIM7672E 4G LTE Cat-1 GSM Modül" width="45%"/>
 </p>
 
 > **📦 Bu proje şu ürüne aittir:**
