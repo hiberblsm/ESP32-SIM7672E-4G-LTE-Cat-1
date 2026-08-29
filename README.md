@@ -154,7 +154,7 @@ examples/05_MQTTTest/
     └── 05_MQTTTest.cpp     ← O modüle özel AT komut implementasyonu
 ```
 
-Sınıf adları modül bazlıdır: `SerialTest`, `HttpTest`, `TcpTest`, `UdpTest`, `MqttTest`, `SmsTest`, `SmsRelay`, `DtmfRelay`, `SmsTemperature`.
+Sınıf adları modül bazlıdır: `SerialTest`, `HttpTest`, `TcpTest`, `UdpTest`, `MqttTest`, `SmsTest`, `SmsRelay`, `DtmfRelay`, `SmsTemperature`, `LbsLocation`.
 
 Her sınıfta ortak olarak bulunan **çekirdek fonksiyonlar**:
 
@@ -407,6 +407,74 @@ DS18B20 Data → GPIO 13 + 4.7kΩ → VCC
 
 ---
 
+### 10 — LbsLocation (Hücresel Konum / LBS)
+
+**Amaç:** GPS **olmadan**, yalnızca baz istasyonu bilgisiyle cihazın konumunu bulmak.
+
+**Nasıl çalışır?** Modem bağlı olduğu hücrenin kimliğini (`MCC` / `MNC` / `LAC-TAC` / `Cell ID`) bildirir; bu kimlik bir hücre veritabanında aranarak enlem/boylam elde edilir.
+
+| Alan | Anlamı | Türkiye örneği |
+|------|--------|----------------|
+| `MCC` | Ülke kodu | `286` |
+| `MNC` | Operatör kodu | Turkcell `1`, Vodafone `2`, Türk Telekom `3` |
+| `LAC` / `TAC` | Konum/izleme alanı | `0x1A2B` |
+| `CID` / `ECI` | Hücre kimliği | LTE'de 28 bit |
+
+**İki yöntem desteklenir** (`getLocation()` sırayla dener):
+
+1. **Modem içi LBS** — `AT+CLBS=1,1`. SIMCom konum sunucusunu kullanır, API anahtarı istemez. **Her firmware sürümünde bulunmaz**; yoksa `ERROR` döner ve 2. yönteme düşülür.
+2. **Online hücre veritabanı** — hücre kimliği HTTP ile [Unwired Labs](https://unwiredlabs.com) veya [OpenCelliD](https://opencellid.org) API'sine sorulur. Ücretsiz anahtar yeterlidir.
+
+> Her iki yöntem de **aktif PDP context (LTE veri)** gerektirir — `initGPRS()` çağrılmadan konum alınamaz.
+
+**Ayarlar** (`main.cpp` başındaki `AYARLAR` bloğu):
+```cpp
+const char APN_STR[]     = "internet";   // Operatör APN'i
+const char LBS_API_KEY[] = "";           // Boşsa yalnız AT+CLBS denenir
+const LbsProvider LBS_PROVIDER = LBS_UNWIRED;   // veya LBS_OPENCELLID
+const uint32_t LOOP_PERIOD_MS = 60000;   // Konum tazeleme periyodu
+```
+
+**Kullanım:**
+```cpp
+CellInfo cell;
+GeoFix   fix;
+
+gsm.initGPRS("internet");                 // LBS icin veri baglantisi sart
+gsm.setApiKey("API_ANAHTARINIZ", LBS_UNWIRED);
+
+if (gsm.getLocation(fix, &cell)) {
+    Serial.println(fix.lat, 6);           // Enlem
+    Serial.println(fix.lon, 6);           // Boylam
+    Serial.println(fix.accuracy);         // Tahmini yaricap (metre)
+    Serial.println(fix.source);           // "CLBS" | "UNWIRED" | "OPENCELLID"
+    Serial.println(gsm.mapsUrl(fix));     // Google Maps baglantisi
+} else {
+    Serial.println(fix.error);            // Basarisizlik sebebi
+}
+```
+
+**Modüle özel fonksiyonlar:**
+
+| Fonksiyon | Açıklama |
+|-----------|----------|
+| `getCellInfo(CellInfo&)` | Servis hücresini okur (`AT+CPSI?`, eksikse `AT+CEREG?` / `AT+COPS?`) |
+| `getRawCellReport()` | CPSI + CEREG + COPS + CSQ ham çıktısı (tanılama) |
+| `lbsQueryModem(GeoFix&)` | Modem içi LBS — `AT+CLBS` |
+| `lbsQueryOnline(CellInfo&, GeoFix&)` | Online hücre veritabanı sorgusu (HTTP) |
+| `getLocation(GeoFix&, CellInfo*)` | Otomatik: önce modem LBS, olmazsa online |
+| `setApiKey(key, provider)` | API anahtarı + sağlayıcı seçimi |
+| `setUnwiredEndpoint(url)` | Bölge sunucusu (`us1` / `eu1` / `ap1`) |
+| `mapsUrl(GeoFix&)` | Google Maps bağlantısı üretir |
+
+**Doğruluk:** Şehir içinde **~150–1000 m**, kırsalda birkaç km. GPS değildir — metre hassasiyeti gerekiyorsa harici GNSS modülü kullanın.
+
+> **Not:** `AT+CLBS` yanıtında koordinat sırası firmware'e göre değişebilir (SIMCom belgelerinde **boylam, enlem**). Kütüphane enlem `|90|` sınırını aşarsa değerleri otomatik takas eder.
+
+> **HTTPS:** Online API'ler HTTPS kullanır; kütüphane cihazda CA sertifikası tutmamak için `authmode=0` (doğrulama kapalı) ayarlar. Üretimde kendi CA'nızı yükleyip `authmode=1` yapmanız önerilir.
+
+---
+
 ## 🌐 Test Sunucusu ve Kimlik Doğrulama
 
 Tüm ağ projeleri (02–05) `test.hibersoft.com.tr` genel test sunucusunu kullanır.
@@ -537,6 +605,11 @@ Bu bölüm, geliştirme ve saha testleri sırasında karşılaşılan gerçek so
 2. Cihaz token alır, broker'a bağlanır, `test/esp32/sensor` topic'ine JSON yayınlar.
 3. Sunucudan `test/esp32/cmd` topic'ine komut göndererek cihazı yönetebilirsiniz.
 
+### Senaryo 5: GPS'siz Araç/Varlık Takibi (LBS)
+1. `10_LbsLocation` projesini yükleyin, APN ve (isterseniz) API anahtarını girin.
+2. Cihaz her dakika baz istasyonu bilgisinden konumu çözer ve Google Maps bağlantısı üretir.
+3. Konteyner, jeneratör, römork gibi "kabaca nerede?" sorusunun yettiği varlıklar için GPS antenine gerek kalmaz.
+
 ---
 
 ## ❓ Sık Sorulan Sorular
@@ -555,6 +628,12 @@ C: `setup()` içinde `gsm.setDebug(true)`. Tüm AT komutları `[TX]`/`[RX]` etik
 
 **S: HTTP sırasında TCP kopuyor, normal mi?**
 C: Evet. SIM7672E'de HTTP ve NETOPEN aynı anda aktif olamaz; kütüphane bunu otomatik yönetir.
+
+**S: LBS ile GPS doğruluğu alabilir miyim?**
+C: Hayır. LBS baz istasyonu tabanlıdır; şehir içinde ~150–1000 m, kırsalda birkaç km hata payı vardır. Metre hassasiyeti için harici GNSS modülü gerekir.
+
+**S: `AT+CLBS` ERROR dönüyor, ne yapmalıyım?**
+C: Bu komut tüm SIM7672E firmware sürümlerinde bulunmaz. `10_LbsLocation` bu durumda otomatik olarak online hücre veritabanına düşer — `LBS_API_KEY` alanına ücretsiz bir Unwired Labs / OpenCelliD anahtarı girmeniz yeterlidir.
 
 **S: DS18B20 bulunamadı hatası?**
 C: GPIO 13 + 4.7 kΩ pull-up direnci bağlı mı kontrol edin. Kabloları kısa tutun.
@@ -576,7 +655,8 @@ esp32-7072e/
 │   ├── 06_SmsTest/           ← SMS işlemleri
 │   ├── 07_SmsRelayControl/   ← SMS ile röle
 │   ├── 08_DtmfRelayControl/  ← DTMF ile röle
-│   └── 09_SmsTemperature/    ← DS18B20 + SMS
+│   ├── 09_SmsTemperature/    ← DS18B20 + SMS
+│   └── 10_LbsLocation/       ← Hücresel konum (LBS)
 ├── README.md
 ├── .gitignore
 └── LICENSE
