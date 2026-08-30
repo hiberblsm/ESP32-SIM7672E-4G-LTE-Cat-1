@@ -340,7 +340,7 @@ gsm.smsDeleteAll();
 
 **Amaç:** Cep telefonundan SMS atarak röleleri aç/kapat. Uzaktan kontrol cihazlarının temeli.
 
-**Röle pinleri:** GPIO 6 ve GPIO 7 (2 kanal).
+**Röle pinleri:** GPIO 6 ve GPIO 15 (2 kanal). *(GPIO 7 PWRKEY'e ayrılmıştır.)*
 
 **Desteklenen SMS Komutları** (büyük/küçük harf ve boşluk duyarsız):
 
@@ -373,7 +373,7 @@ gsm.smsDeleteAll();
 
 **Amaç:** SIM numarasını **arayıp** tuşlara basarak röle kontrol etmek. İnternet gerektirmez.
 
-**Röle pinleri:** GPIO 6 ve GPIO 7 (2 kanal).
+**Röle pinleri:** GPIO 6 ve GPIO 15 (2 kanal). *(GPIO 7 PWRKEY'e ayrılmıştır.)*
 
 **DTMF Tuş Haritası:**
 
@@ -500,6 +500,7 @@ if (gsm.getLocation(fix, &cell)) {
 | `lbsQueryOnline(CellInfo&, GeoFix&)` | Online hücre veritabanı sorgusu (HTTP) |
 | `getLocation(GeoFix&, CellInfo*)` | Otomatik: önce modem LBS, olmazsa online |
 | `setApiKey(key, provider)` | API anahtarı + sağlayıcı seçimi |
+| `setPreferOnline(bool)` | Sırayı çevirir: önce online API, `AT+CLBS` yedek |
 | `setUnwiredEndpoint(url)` | Bölge sunucusu (`us1` / `eu1` / `ap1`) |
 | `mapsUrl(GeoFix&)` | Google Maps bağlantısı üretir |
 
@@ -571,7 +572,7 @@ Bu bölüm, geliştirme ve saha testleri sırasında karşılaşılan gerçek so
 ### 1. ESP32-S3 Pin Tuzağı ⚠️
 - **Sorun:** `Invalid pin selected` + sonsuz watchdog reset.
 - **Neden:** ESP32-S3'te GPIO 22–25 **yok**, 26–37 Octal PSRAM/Flash tarafından kullanılıyor.
-- **Çözüm:** Röleler GPIO 6/7, sensörler GPIO 13 gibi **serbest** pinlere taşındı.
+- **Çözüm:** Röleler GPIO 6/15, sensörler GPIO 13 gibi **serbest** pinlere taşındı.
 
 ### 2. MQTT Remaining Length Kodlaması
 - **Sorun:** Payload 127 baytı aştığında broker bağlantıyı kapatıyordu.
@@ -596,6 +597,18 @@ Bu bölüm, geliştirme ve saha testleri sırasında karşılaşılan gerçek so
 
 ### 7. Şebeke Kaydı Çift Yedek
 - LTE ağlarında `AT+CREG?` yanıtı gecikebilir; `AT+CEREG?` (LTE) önce, `AT+CREG?` (2G) yedek olarak sorgulanır.
+
+### 8. NPN Sürücüde Ters Kutupluluk ⚠️ (en çok vakit kaybettiren)
+- **Sorun:** Modül elle PWRKEY'e basınca açılıyor, 2–3 saniye sonra kendiliğinden kapanıyordu. Bazı denemelerde hiç cevap vermiyordu.
+- **Neden:** `PWRKEY` ve `RESET` modülde **aktif-düşük**. Araya NPN transistör girince mantık tersine döner; eski kod her iki pini de "boşta HIGH" bırakıyordu. NPN'li kartta bu, PWRKEY'i sürekli basılı (uzun basış = kapat), RESET'i sürekli asserted (modül reset'te kilitli) tutuyordu.
+- **Belirti aldatıcı:** İkisi de dışarıdan "modem cevap vermiyor" gibi görünür — asıl sebep pin sürücüsüdür.
+- **Çözüm:** `_pwrKeySet()` / `_resetSet()` katmanı + `PWRKEY_ACTIVE_HIGH` / `RESET_ACTIVE_HIGH` tanımları. Tanılama için `powerKeyPulse(ms)`.
+
+### 9. AT+CLBS Çalışıyorsa Online API Hiç Çağrılmaz
+- **Sorun:** OpenCelliD paneline hiç istek düşmüyordu; anahtar yanlış sanıldı.
+- **Neden:** `getLocation()` önce `AT+CLBS` deniyor ve başarılı olunca dönüyor — online sağlayıcıya istek gitmiyor. Beklenen davranış.
+- **Ayrıca:** HTTPS denemesi `+HTTPACTION` ile **715** döndü. 7xx SIMCom'un iç hata aralığıdır, sunucu yanıtı değildir; istek TLS el sıkışmasında düşüp sunucuya hiç ulaşmaz.
+- **Çözüm:** Varsayılan `PREFER_ONLINE = false` (anahtarsız çalışır). Test için `setPreferOnline(true)`. 7xx kodları artık okunabilir mesaja çevriliyor.
 
 ---
 
@@ -684,7 +697,7 @@ C: **GPIO 7**. Bu yüzden Röle 2, GPIO 7'den **GPIO 15**'e taşınmıştır (`0
 C: Hayır. LBS baz istasyonu tabanlıdır; şehir içinde ~150–1000 m, kırsalda birkaç km hata payı vardır. Metre hassasiyeti için harici GNSS modülü gerekir.
 
 **S: `AT+CLBS` ERROR dönüyor, ne yapmalıyım?**
-C: Bu komut tüm SIM7672E firmware sürümlerinde bulunmaz. `10_LbsLocation` bu durumda otomatik olarak online hücre veritabanına düşer — `LBS_API_KEY` alanına ücretsiz bir Unwired Labs / OpenCelliD anahtarı girmeniz yeterlidir.
+C: Bu komut tüm SIM7672E firmware sürümlerinde bulunmaz. `10_LbsLocation` bu durumda otomatik olarak online hücre veritabanına düşer — `LBS_API_KEY` alanına ücretsiz bir Unwired Labs / OpenCelliD anahtarı girin. Ancak online yolun da modemin TLS yığınına bağlı olduğunu unutmayın: `+HTTPACTION` **7xx** dönerse el sıkışma başarısız olmuştur ve o firmware'de online sağlayıcı kullanılamaz.
 
 **S: DS18B20 bulunamadı hatası?**
 C: GPIO 13 + 4.7 kΩ pull-up direnci bağlı mı kontrol edin. Kabloları kısa tutun.
