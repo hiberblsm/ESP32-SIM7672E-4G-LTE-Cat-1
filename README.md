@@ -60,15 +60,45 @@ Tüm projelerde modem pinleri **aynıdır** ve değişmez:
 |:-------------:|:--------:|----------|
 | **17** | RX | ESP32 TX → Modül RX |
 | **16** | TX | ESP32 RX ← Modül TX |
-| **4**  | PWRKEY | Güç açma/kapama |
+| **7**  | PWRKEY | Güç açma/kapama |
 | **5**  | RESET | Donanım sıfırlama (LOW aktif) |
 | GND | GND | Ortak toprak |
 
 Kodda kurucu çağrısı her zaman şu şekildedir:
 
 ```cpp
-gsm(17, 16, 4, 5);   // TX, RX, PWRKEY, RESET
+gsm(17, 16, 7, 5);   // TX, RX, PWRKEY, RESET
 ```
+
+### PWRKEY / RESET Sürücü Kutupluluğu (NPN kullanıyorsanız OKUYUN)
+
+Modülde `PWRKEY` ve `RESET` **aktif-düşük**tür: pin GND'ye çekilince tetiklenir. GPIO'yu doğrudan bağladıysanız sorun yok. Ancak araya **NPN transistör** koyduysanız (`base--R-->GPIO`, `emitter-->GND`, `collector-->pin`) mantık **tersine döner**:
+
+| GPIO | NPN | Modül pini | Modül ne görür |
+|:----:|:---:|:----------:|----------------|
+| `LOW` | kesimde | serbest (dahili pull-up) | bırakıldı |
+| `HIGH` | iletimde | GND'ye çekili | **tetiklendi** |
+
+Her modülün `.h` dosyasında iki tanım vardır:
+
+```c
+#define PWRKEY_ACTIVE_HIGH  1   // 0 = doğrudan bağlantı, 1 = NPN sürücü
+#define RESET_ACTIVE_HIGH   1
+```
+
+> ❗ **Yanlış değer sessizce öldürür.** `PWRKEY_ACTIVE_HIGH` ters ise pin boşta sürekli basılı kalır: modül açılır ve 2–3 saniye sonra kendiliğinden **kapanır**. `RESET_ACTIVE_HIGH` ters ise modül reset'ten hiç çıkamaz ve AT'ye asla cevap vermez. Her ikisi de "modem cevap vermiyor" gibi görünür.
+
+Darbe süreleri de aynı dosyada toplanmıştır:
+
+```c
+#define PWRKEY_ON_MS    1500    // Açma darbesi  (~1.0-1.5 s)
+#define PWRKEY_OFF_MS   3000    // Kapatma darbesi (>= 2.5 s)
+#define PWRKEY_BOOT_MS  8000    // Darbe sonrası AT'ye hazır olma süresi
+```
+
+Emin değilseniz `powerKeyPulse(1500)` ile iki kutupluluğu da deneyip hangisinin modülü açtığını gözleyin.
+
+---
 
 ### ESP32-S3 Pin Kısıtları (ÇOK ÖNEMLİ)
 
@@ -77,9 +107,9 @@ ESP32-S3'te **GPIO 22–25 yoktur**, **GPIO 26–37** ise Octal PSRAM/Flash tara
 | Kullanım | Pin |
 |----------|-----|
 | Röle 1 (IN1) | **GPIO 6** |
-| Röle 2 (IN2) | **GPIO 7** |
+| Röle 2 (IN2) | **GPIO 15** |
 | DS18B20 Data | **GPIO 13** |
-| Diğer serbest | 8, 9, 10, 11, 12, 14, 15 |
+| Diğer serbest | 8, 9, 10, 11, 12, 14 |
 
 > ❗ Eski `25/26/27/32` pinleri ESP32-S3'te `Invalid pin selected` hatasına ve **watchdog reset'e** yol açar.
 
@@ -154,7 +184,7 @@ examples/05_MQTTTest/
     └── 05_MQTTTest.cpp     ← O modüle özel AT komut implementasyonu
 ```
 
-Sınıf adları modül bazlıdır: `SerialTest`, `HttpTest`, `TcpTest`, `UdpTest`, `MqttTest`, `SmsTest`, `SmsRelay`, `DtmfRelay`, `SmsTemperature`.
+Sınıf adları modül bazlıdır: `SerialTest`, `HttpTest`, `TcpTest`, `UdpTest`, `MqttTest`, `SmsTest`, `SmsRelay`, `DtmfRelay`, `SmsTemperature`, `LbsLocation`.
 
 Her sınıfta ortak olarak bulunan **çekirdek fonksiyonlar**:
 
@@ -163,6 +193,7 @@ Her sınıfta ortak olarak bulunan **çekirdek fonksiyonlar**:
 | `begin(baud)` | UART2'yi başlatır, modemi uyandırır |
 | `hardReset()` | RESET piniyle donanım sıfırlama (önerilen başlangıç) |
 | `powerOn()` / `powerOff()` | PWRKEY ile açma/kapama |
+| `powerKeyPulse(ms)` | Ham PWRKEY darbesi (donanım/kutupluluk tanılaması) |
 | `sendAT(cmd, timeout)` | AT komutu gönder, yanıtı `String` döndür |
 | `sendATExpect(cmd, beklenen)` | Yanıt bekler, `true/false` döndür |
 | `waitForResponse(beklenen)` | Beklenen metni bekler |
@@ -193,7 +224,7 @@ Her sınıfta ortak olarak bulunan **çekirdek fonksiyonlar**:
 **Ne zaman kullanılır:** Yeni bir kart/modül taktığınızda, bağlantı sorunlarını ayıklarken ilk adım.
 
 ```cpp
-SerialTest gsm(17, 16, 4, 5);
+SerialTest gsm(17, 16, 7, 5);
 
 gsm.begin();
 Serial.println("IMEI: " + gsm.getIMEI());
@@ -309,7 +340,7 @@ gsm.smsDeleteAll();
 
 **Amaç:** Cep telefonundan SMS atarak röleleri aç/kapat. Uzaktan kontrol cihazlarının temeli.
 
-**Röle pinleri:** GPIO 6 ve GPIO 7 (2 kanal).
+**Röle pinleri:** GPIO 6 ve GPIO 15 (2 kanal). *(GPIO 7 PWRKEY'e ayrılmıştır.)*
 
 **Desteklenen SMS Komutları** (büyük/küçük harf ve boşluk duyarsız):
 
@@ -330,7 +361,7 @@ gsm.smsDeleteAll();
 
 ```cpp
 #define R1_PIN  6
-#define R2_PIN  7
+#define R2_PIN  15
 #define YETKILI "+905468422222"
 ```
 
@@ -342,7 +373,7 @@ gsm.smsDeleteAll();
 
 **Amaç:** SIM numarasını **arayıp** tuşlara basarak röle kontrol etmek. İnternet gerektirmez.
 
-**Röle pinleri:** GPIO 6 ve GPIO 7 (2 kanal).
+**Röle pinleri:** GPIO 6 ve GPIO 15 (2 kanal). *(GPIO 7 PWRKEY'e ayrılmıştır.)*
 
 **DTMF Tuş Haritası:**
 
@@ -407,6 +438,89 @@ DS18B20 Data → GPIO 13 + 4.7kΩ → VCC
 
 ---
 
+### 10 — LbsLocation (Hücresel Konum / LBS)
+
+**Amaç:** GPS **olmadan**, yalnızca baz istasyonu bilgisiyle cihazın konumunu bulmak.
+
+**Nasıl çalışır?** Modem bağlı olduğu hücrenin kimliğini (`MCC` / `MNC` / `LAC-TAC` / `Cell ID`) bildirir; bu kimlik bir hücre veritabanında aranarak enlem/boylam elde edilir.
+
+| Alan | Anlamı | Türkiye örneği |
+|------|--------|----------------|
+| `MCC` | Ülke kodu | `286` |
+| `MNC` | Operatör kodu | Turkcell `1`, Vodafone `2`, Türk Telekom `3` |
+| `LAC` / `TAC` | Konum/izleme alanı | `0x1A2B` |
+| `CID` / `ECI` | Hücre kimliği | LTE'de 28 bit |
+
+**İki yöntem desteklenir** (`getLocation()` sırayla dener):
+
+1. **Modem içi LBS** — `AT+CLBS=1,1`. SIMCom konum sunucusunu kullanır, API anahtarı istemez. **Her firmware sürümünde bulunmaz**; yoksa `ERROR` döner ve 2. yönteme düşülür.
+2. **Online hücre veritabanı** — hücre kimliği HTTP ile [Unwired Labs](https://unwiredlabs.com) veya [OpenCelliD](https://opencellid.org) API'sine sorulur. Ücretsiz anahtar yeterlidir.
+
+> Her iki yöntem de **aktif PDP context (LTE veri)** gerektirir — `initGPRS()` çağrılmadan konum alınamaz.
+
+**Ayarlar** (`main.cpp` başındaki `AYARLAR` bloğu):
+```cpp
+const char APN_STR[]     = "internet";   // Operatör APN'i
+const char LBS_API_KEY[] = "";           // BOŞ BIRAKIN — çoğu kart için gereksiz
+const LbsProvider LBS_PROVIDER = LBS_UNWIRED;   // veya LBS_OPENCELLID
+const bool PREFER_ONLINE = false;        // false → önce AT+CLBS (önerilen)
+const uint32_t LOOP_PERIOD_MS = 60000;   // Konum tazeleme periyodu
+```
+
+> ✅ **Anahtar girmeyin, gerek yok.** SIM7672E'de `AT+CLBS` çalışıyor; varsayılan ayarlarla kutudan çıktığı gibi konum alırsınız. `LBS_API_KEY` yalnızca `AT+CLBS`'in desteklenmediği bir firmware'e denk gelirseniz gerekir.
+
+> ⚠️ **Panelde istek görünmüyor mu?** Normaldir. `PREFER_ONLINE = false` iken `AT+CLBS` başarılı olursa online API **hiç çağrılmaz**. Sağlayıcıyı test etmek istiyorsanız `PREFER_ONLINE = true` yapın.
+
+**Kullanım:**
+```cpp
+CellInfo cell;
+GeoFix   fix;
+
+gsm.initGPRS("internet");                 // LBS icin veri baglantisi sart
+gsm.setApiKey("API_ANAHTARINIZ", LBS_UNWIRED);
+
+if (gsm.getLocation(fix, &cell)) {
+    Serial.println(fix.lat, 6);           // Enlem
+    Serial.println(fix.lon, 6);           // Boylam
+    Serial.println(fix.accuracy);         // Tahmini yaricap (metre)
+    Serial.println(fix.source);           // "CLBS" | "UNWIRED" | "OPENCELLID"
+    Serial.println(gsm.mapsUrl(fix));     // Google Maps baglantisi
+} else {
+    Serial.println(fix.error);            // Basarisizlik sebebi
+}
+```
+
+**Modüle özel fonksiyonlar:**
+
+| Fonksiyon | Açıklama |
+|-----------|----------|
+| `getCellInfo(CellInfo&)` | Servis hücresini okur (`AT+CPSI?`, eksikse `AT+CEREG?` / `AT+COPS?`) |
+| `getRawCellReport()` | CPSI + CEREG + COPS + CSQ ham çıktısı (tanılama) |
+| `lbsQueryModem(GeoFix&)` | Modem içi LBS — `AT+CLBS` |
+| `lbsQueryOnline(CellInfo&, GeoFix&)` | Online hücre veritabanı sorgusu (HTTP) |
+| `getLocation(GeoFix&, CellInfo*)` | Otomatik: önce modem LBS, olmazsa online |
+| `setApiKey(key, provider)` | API anahtarı + sağlayıcı seçimi |
+| `setPreferOnline(bool)` | Sırayı çevirir: önce online API, `AT+CLBS` yedek |
+| `setUnwiredEndpoint(url)` | Bölge sunucusu (`us1` / `eu1` / `ap1`) |
+| `mapsUrl(GeoFix&)` | Google Maps bağlantısı üretir |
+
+**Doğruluk:** Şehir içinde **~150–1000 m**, kırsalda birkaç km. GPS değildir — metre hassasiyeti gerekiyorsa harici GNSS modülü kullanın.
+
+> **Not:** `AT+CLBS` yanıtında koordinat sırası firmware'e göre değişebilir (SIMCom belgelerinde **boylam, enlem**). Kütüphane enlem `|90|` sınırını aşarsa değerleri otomatik takas eder.
+
+> **HTTPS:** Online API'ler HTTPS kullanır; kütüphane cihazda CA sertifikası tutmamak için `authmode=0` (doğrulama kapalı) ayarlar. Üretimde kendi CA'nızı yükleyip `authmode=1` yapmanız önerilir.
+
+**`+HTTPACTION` hata kodları:** SIMCom'un **7xx** aralığı HTTP durum kodu **değildir** — modemin kendi iç hatasıdır ve istek sunucuya hiç ulaşmamış demektir (çoğunlukla TLS el sıkışması başarısız). Sahada `715` görülmüştür. Bu durumda online sağlayıcı kullanılamaz; `AT+CLBS` zaten çalıştığı için pratikte sorun oluşturmaz. Kütüphane bu kodları okunabilir mesaja çevirir:
+
+| Kod | Anlamı |
+|-----|--------|
+| `0` | Yanıt yok (zaman aşımı) |
+| `301` / `302` | Yönlendirme (REDIR desteği gerekir) |
+| `401` / `403` | API anahtarı geçersiz veya yetkisiz |
+| `7xx` | **Modem tarafı hata** — istek sunucuya ulaşamadı (genellikle TLS) |
+
+---
+
 ## 🌐 Test Sunucusu ve Kimlik Doğrulama
 
 Tüm ağ projeleri (02–05) `test.hibersoft.com.tr` genel test sunucusunu kullanır.
@@ -458,7 +572,7 @@ Bu bölüm, geliştirme ve saha testleri sırasında karşılaşılan gerçek so
 ### 1. ESP32-S3 Pin Tuzağı ⚠️
 - **Sorun:** `Invalid pin selected` + sonsuz watchdog reset.
 - **Neden:** ESP32-S3'te GPIO 22–25 **yok**, 26–37 Octal PSRAM/Flash tarafından kullanılıyor.
-- **Çözüm:** Röleler GPIO 6/7, sensörler GPIO 13 gibi **serbest** pinlere taşındı.
+- **Çözüm:** Röleler GPIO 6/15, sensörler GPIO 13 gibi **serbest** pinlere taşındı.
 
 ### 2. MQTT Remaining Length Kodlaması
 - **Sorun:** Payload 127 baytı aştığında broker bağlantıyı kapatıyordu.
@@ -483,6 +597,18 @@ Bu bölüm, geliştirme ve saha testleri sırasında karşılaşılan gerçek so
 
 ### 7. Şebeke Kaydı Çift Yedek
 - LTE ağlarında `AT+CREG?` yanıtı gecikebilir; `AT+CEREG?` (LTE) önce, `AT+CREG?` (2G) yedek olarak sorgulanır.
+
+### 8. NPN Sürücüde Ters Kutupluluk ⚠️ (en çok vakit kaybettiren)
+- **Sorun:** Modül elle PWRKEY'e basınca açılıyor, 2–3 saniye sonra kendiliğinden kapanıyordu. Bazı denemelerde hiç cevap vermiyordu.
+- **Neden:** `PWRKEY` ve `RESET` modülde **aktif-düşük**. Araya NPN transistör girince mantık tersine döner; eski kod her iki pini de "boşta HIGH" bırakıyordu. NPN'li kartta bu, PWRKEY'i sürekli basılı (uzun basış = kapat), RESET'i sürekli asserted (modül reset'te kilitli) tutuyordu.
+- **Belirti aldatıcı:** İkisi de dışarıdan "modem cevap vermiyor" gibi görünür — asıl sebep pin sürücüsüdür.
+- **Çözüm:** `_pwrKeySet()` / `_resetSet()` katmanı + `PWRKEY_ACTIVE_HIGH` / `RESET_ACTIVE_HIGH` tanımları. Tanılama için `powerKeyPulse(ms)`.
+
+### 9. AT+CLBS Çalışıyorsa Online API Hiç Çağrılmaz
+- **Sorun:** OpenCelliD paneline hiç istek düşmüyordu; anahtar yanlış sanıldı.
+- **Neden:** `getLocation()` önce `AT+CLBS` deniyor ve başarılı olunca dönüyor — online sağlayıcıya istek gitmiyor. Beklenen davranış.
+- **Ayrıca:** HTTPS denemesi `+HTTPACTION` ile **715** döndü. 7xx SIMCom'un iç hata aralığıdır, sunucu yanıtı değildir; istek TLS el sıkışmasında düşüp sunucuya hiç ulaşmaz.
+- **Çözüm:** Varsayılan `PREFER_ONLINE = false` (anahtarsız çalışır). Test için `setPreferOnline(true)`. 7xx kodları artık okunabilir mesaja çevriliyor.
 
 ---
 
@@ -537,6 +663,11 @@ Bu bölüm, geliştirme ve saha testleri sırasında karşılaşılan gerçek so
 2. Cihaz token alır, broker'a bağlanır, `test/esp32/sensor` topic'ine JSON yayınlar.
 3. Sunucudan `test/esp32/cmd` topic'ine komut göndererek cihazı yönetebilirsiniz.
 
+### Senaryo 5: GPS'siz Araç/Varlık Takibi (LBS)
+1. `10_LbsLocation` projesini yükleyin, APN ve (isterseniz) API anahtarını girin.
+2. Cihaz her dakika baz istasyonu bilgisinden konumu çözer ve Google Maps bağlantısı üretir.
+3. Konteyner, jeneratör, römork gibi "kabaca nerede?" sorusunun yettiği varlıklar için GPS antenine gerek kalmaz.
+
 ---
 
 ## ❓ Sık Sorulan Sorular
@@ -555,6 +686,18 @@ C: `setup()` içinde `gsm.setDebug(true)`. Tüm AT komutları `[TX]`/`[RX]` etik
 
 **S: HTTP sırasında TCP kopuyor, normal mi?**
 C: Evet. SIM7672E'de HTTP ve NETOPEN aynı anda aktif olamaz; kütüphane bunu otomatik yönetir.
+
+**S: Modül açılıyor ama 2-3 saniye sonra kapanıyor / hiç cevap vermiyor.**
+C: Neredeyse her zaman PWRKEY veya RESET kutupluluğudur. NPN transistör kullanıyorsanız `.h` dosyasındaki `PWRKEY_ACTIVE_HIGH` ve `RESET_ACTIVE_HIGH` değerlerini `1`, doğrudan bağlıysanız `0` yapın. Ayrıntı: [PWRKEY / RESET Sürücü Kutupluluğu](#pwrkey--reset-sürücü-kutupluluğu-npn-kullanıyorsanız-okuyun).
+
+**S: PWRKEY hangi pinde?**
+C: **GPIO 7**. Bu yüzden Röle 2, GPIO 7'den **GPIO 15**'e taşınmıştır (`07` ve `08` projelerinde).
+
+**S: LBS ile GPS doğruluğu alabilir miyim?**
+C: Hayır. LBS baz istasyonu tabanlıdır; şehir içinde ~150–1000 m, kırsalda birkaç km hata payı vardır. Metre hassasiyeti için harici GNSS modülü gerekir.
+
+**S: `AT+CLBS` ERROR dönüyor, ne yapmalıyım?**
+C: Bu komut tüm SIM7672E firmware sürümlerinde bulunmaz. `10_LbsLocation` bu durumda otomatik olarak online hücre veritabanına düşer — `LBS_API_KEY` alanına ücretsiz bir Unwired Labs / OpenCelliD anahtarı girin. Ancak online yolun da modemin TLS yığınına bağlı olduğunu unutmayın: `+HTTPACTION` **7xx** dönerse el sıkışma başarısız olmuştur ve o firmware'de online sağlayıcı kullanılamaz.
 
 **S: DS18B20 bulunamadı hatası?**
 C: GPIO 13 + 4.7 kΩ pull-up direnci bağlı mı kontrol edin. Kabloları kısa tutun.
@@ -576,7 +719,8 @@ esp32-7072e/
 │   ├── 06_SmsTest/           ← SMS işlemleri
 │   ├── 07_SmsRelayControl/   ← SMS ile röle
 │   ├── 08_DtmfRelayControl/  ← DTMF ile röle
-│   └── 09_SmsTemperature/    ← DS18B20 + SMS
+│   ├── 09_SmsTemperature/    ← DS18B20 + SMS
+│   └── 10_LbsLocation/       ← Hücresel konum (LBS)
 ├── README.md
 ├── .gitignore
 └── LICENSE
