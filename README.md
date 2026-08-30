@@ -60,15 +60,45 @@ Tüm projelerde modem pinleri **aynıdır** ve değişmez:
 |:-------------:|:--------:|----------|
 | **17** | RX | ESP32 TX → Modül RX |
 | **16** | TX | ESP32 RX ← Modül TX |
-| **4**  | PWRKEY | Güç açma/kapama |
+| **7**  | PWRKEY | Güç açma/kapama |
 | **5**  | RESET | Donanım sıfırlama (LOW aktif) |
 | GND | GND | Ortak toprak |
 
 Kodda kurucu çağrısı her zaman şu şekildedir:
 
 ```cpp
-gsm(17, 16, 4, 5);   // TX, RX, PWRKEY, RESET
+gsm(17, 16, 7, 5);   // TX, RX, PWRKEY, RESET
 ```
+
+### PWRKEY / RESET Sürücü Kutupluluğu (NPN kullanıyorsanız OKUYUN)
+
+Modülde `PWRKEY` ve `RESET` **aktif-düşük**tür: pin GND'ye çekilince tetiklenir. GPIO'yu doğrudan bağladıysanız sorun yok. Ancak araya **NPN transistör** koyduysanız (`base--R-->GPIO`, `emitter-->GND`, `collector-->pin`) mantık **tersine döner**:
+
+| GPIO | NPN | Modül pini | Modül ne görür |
+|:----:|:---:|:----------:|----------------|
+| `LOW` | kesimde | serbest (dahili pull-up) | bırakıldı |
+| `HIGH` | iletimde | GND'ye çekili | **tetiklendi** |
+
+Her modülün `.h` dosyasında iki tanım vardır:
+
+```c
+#define PWRKEY_ACTIVE_HIGH  1   // 0 = doğrudan bağlantı, 1 = NPN sürücü
+#define RESET_ACTIVE_HIGH   1
+```
+
+> ❗ **Yanlış değer sessizce öldürür.** `PWRKEY_ACTIVE_HIGH` ters ise pin boşta sürekli basılı kalır: modül açılır ve 2–3 saniye sonra kendiliğinden **kapanır**. `RESET_ACTIVE_HIGH` ters ise modül reset'ten hiç çıkamaz ve AT'ye asla cevap vermez. Her ikisi de "modem cevap vermiyor" gibi görünür.
+
+Darbe süreleri de aynı dosyada toplanmıştır:
+
+```c
+#define PWRKEY_ON_MS    1500    // Açma darbesi  (~1.0-1.5 s)
+#define PWRKEY_OFF_MS   3000    // Kapatma darbesi (>= 2.5 s)
+#define PWRKEY_BOOT_MS  8000    // Darbe sonrası AT'ye hazır olma süresi
+```
+
+Emin değilseniz `powerKeyPulse(1500)` ile iki kutupluluğu da deneyip hangisinin modülü açtığını gözleyin.
+
+---
 
 ### ESP32-S3 Pin Kısıtları (ÇOK ÖNEMLİ)
 
@@ -77,9 +107,9 @@ ESP32-S3'te **GPIO 22–25 yoktur**, **GPIO 26–37** ise Octal PSRAM/Flash tara
 | Kullanım | Pin |
 |----------|-----|
 | Röle 1 (IN1) | **GPIO 6** |
-| Röle 2 (IN2) | **GPIO 7** |
+| Röle 2 (IN2) | **GPIO 15** |
 | DS18B20 Data | **GPIO 13** |
-| Diğer serbest | 8, 9, 10, 11, 12, 14, 15 |
+| Diğer serbest | 8, 9, 10, 11, 12, 14 |
 
 > ❗ Eski `25/26/27/32` pinleri ESP32-S3'te `Invalid pin selected` hatasına ve **watchdog reset'e** yol açar.
 
@@ -163,6 +193,7 @@ Her sınıfta ortak olarak bulunan **çekirdek fonksiyonlar**:
 | `begin(baud)` | UART2'yi başlatır, modemi uyandırır |
 | `hardReset()` | RESET piniyle donanım sıfırlama (önerilen başlangıç) |
 | `powerOn()` / `powerOff()` | PWRKEY ile açma/kapama |
+| `powerKeyPulse(ms)` | Ham PWRKEY darbesi (donanım/kutupluluk tanılaması) |
 | `sendAT(cmd, timeout)` | AT komutu gönder, yanıtı `String` döndür |
 | `sendATExpect(cmd, beklenen)` | Yanıt bekler, `true/false` döndür |
 | `waitForResponse(beklenen)` | Beklenen metni bekler |
@@ -193,7 +224,7 @@ Her sınıfta ortak olarak bulunan **çekirdek fonksiyonlar**:
 **Ne zaman kullanılır:** Yeni bir kart/modül taktığınızda, bağlantı sorunlarını ayıklarken ilk adım.
 
 ```cpp
-SerialTest gsm(17, 16, 4, 5);
+SerialTest gsm(17, 16, 7, 5);
 
 gsm.begin();
 Serial.println("IMEI: " + gsm.getIMEI());
@@ -330,7 +361,7 @@ gsm.smsDeleteAll();
 
 ```cpp
 #define R1_PIN  6
-#define R2_PIN  7
+#define R2_PIN  15
 #define YETKILI "+905468422222"
 ```
 
@@ -430,10 +461,15 @@ DS18B20 Data → GPIO 13 + 4.7kΩ → VCC
 **Ayarlar** (`main.cpp` başındaki `AYARLAR` bloğu):
 ```cpp
 const char APN_STR[]     = "internet";   // Operatör APN'i
-const char LBS_API_KEY[] = "";           // Boşsa yalnız AT+CLBS denenir
+const char LBS_API_KEY[] = "";           // BOŞ BIRAKIN — çoğu kart için gereksiz
 const LbsProvider LBS_PROVIDER = LBS_UNWIRED;   // veya LBS_OPENCELLID
+const bool PREFER_ONLINE = false;        // false → önce AT+CLBS (önerilen)
 const uint32_t LOOP_PERIOD_MS = 60000;   // Konum tazeleme periyodu
 ```
+
+> ✅ **Anahtar girmeyin, gerek yok.** SIM7672E'de `AT+CLBS` çalışıyor; varsayılan ayarlarla kutudan çıktığı gibi konum alırsınız. `LBS_API_KEY` yalnızca `AT+CLBS`'in desteklenmediği bir firmware'e denk gelirseniz gerekir.
+
+> ⚠️ **Panelde istek görünmüyor mu?** Normaldir. `PREFER_ONLINE = false` iken `AT+CLBS` başarılı olursa online API **hiç çağrılmaz**. Sağlayıcıyı test etmek istiyorsanız `PREFER_ONLINE = true` yapın.
 
 **Kullanım:**
 ```cpp
@@ -472,6 +508,15 @@ if (gsm.getLocation(fix, &cell)) {
 > **Not:** `AT+CLBS` yanıtında koordinat sırası firmware'e göre değişebilir (SIMCom belgelerinde **boylam, enlem**). Kütüphane enlem `|90|` sınırını aşarsa değerleri otomatik takas eder.
 
 > **HTTPS:** Online API'ler HTTPS kullanır; kütüphane cihazda CA sertifikası tutmamak için `authmode=0` (doğrulama kapalı) ayarlar. Üretimde kendi CA'nızı yükleyip `authmode=1` yapmanız önerilir.
+
+**`+HTTPACTION` hata kodları:** SIMCom'un **7xx** aralığı HTTP durum kodu **değildir** — modemin kendi iç hatasıdır ve istek sunucuya hiç ulaşmamış demektir (çoğunlukla TLS el sıkışması başarısız). Sahada `715` görülmüştür. Bu durumda online sağlayıcı kullanılamaz; `AT+CLBS` zaten çalıştığı için pratikte sorun oluşturmaz. Kütüphane bu kodları okunabilir mesaja çevirir:
+
+| Kod | Anlamı |
+|-----|--------|
+| `0` | Yanıt yok (zaman aşımı) |
+| `301` / `302` | Yönlendirme (REDIR desteği gerekir) |
+| `401` / `403` | API anahtarı geçersiz veya yetkisiz |
+| `7xx` | **Modem tarafı hata** — istek sunucuya ulaşamadı (genellikle TLS) |
 
 ---
 
@@ -628,6 +673,12 @@ C: `setup()` içinde `gsm.setDebug(true)`. Tüm AT komutları `[TX]`/`[RX]` etik
 
 **S: HTTP sırasında TCP kopuyor, normal mi?**
 C: Evet. SIM7672E'de HTTP ve NETOPEN aynı anda aktif olamaz; kütüphane bunu otomatik yönetir.
+
+**S: Modül açılıyor ama 2-3 saniye sonra kapanıyor / hiç cevap vermiyor.**
+C: Neredeyse her zaman PWRKEY veya RESET kutupluluğudur. NPN transistör kullanıyorsanız `.h` dosyasındaki `PWRKEY_ACTIVE_HIGH` ve `RESET_ACTIVE_HIGH` değerlerini `1`, doğrudan bağlıysanız `0` yapın. Ayrıntı: [PWRKEY / RESET Sürücü Kutupluluğu](#pwrkey--reset-sürücü-kutupluluğu-npn-kullanıyorsanız-okuyun).
+
+**S: PWRKEY hangi pinde?**
+C: **GPIO 7**. Bu yüzden Röle 2, GPIO 7'den **GPIO 15**'e taşınmıştır (`07` ve `08` projelerinde).
 
 **S: LBS ile GPS doğruluğu alabilir miyim?**
 C: Hayır. LBS baz istasyonu tabanlıdır; şehir içinde ~150–1000 m, kırsalda birkaç km hata payı vardır. Metre hassasiyeti için harici GNSS modülü gerekir.

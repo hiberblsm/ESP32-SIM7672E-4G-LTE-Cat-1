@@ -13,7 +13,7 @@
  * Bağlantılar (ESP32-S3):
  *   GPIO 17 (TX) -> SIM7672E RX
  *   GPIO 16 (RX) <- SIM7672E TX
- *   GPIO  4      -> SIM7672E PWRKEY
+ *   GPIO  7      -> SIM7672E PWRKEY
  *   GPIO  5      -> SIM7672E RESET
  *
  * Serial Monitor: 115200 baud
@@ -22,7 +22,7 @@
 #include <Arduino.h>
 #include "02_HTTPTest.h"
 
-HttpTest gsm(17, 16, 4, 5);  // txPin, rxPin, pwrKeyPin, resetPin
+HttpTest gsm(17, 16, 7, 5);  // txPin, rxPin, pwrKeyPin, resetPin
 
 // ====== AYARLAR ======
 // APN: Turkcell/Vodafone: "internet", Turk Telekom: "tt"

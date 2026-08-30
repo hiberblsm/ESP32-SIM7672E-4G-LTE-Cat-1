@@ -24,7 +24,7 @@
  * Pin Bağlantıları (ESP32-S3):
  *   GPIO 17 (TX) -> SIM7672E RX
  *   GPIO 16 (RX) <- SIM7672E TX
- *   GPIO  4      -> SIM7672E PWRKEY
+ *   GPIO  7      -> SIM7672E PWRKEY
  *   GPIO  5      -> SIM7672E RESET (LOW aktif)
  */
 
@@ -37,7 +37,7 @@
 // Varsayılan pin tanımları
 #define SIM7672_TX_PIN      17
 #define SIM7672_RX_PIN      16
-#define SIM7672_PWRKEY_PIN   4
+#define SIM7672_PWRKEY_PIN   7
 #define SIM7672_RESET_PIN    5
 
 // Varsayılan baud rate (SIM7672E: 115200)
@@ -51,8 +51,8 @@
 //
 // NPN sürücü (base--R-->GPIO, emitter-->GND, collector-->PWRKEY) kullanıyorsanız
 // aşağıdaki değeri 1 yapın; aksi halde PWRKEY sürekli basılı kalır ve modül açılmaz.
-#define PWRKEY_ACTIVE_HIGH  0
-#define RESET_ACTIVE_HIGH   0
+#define PWRKEY_ACTIVE_HIGH  1
+#define RESET_ACTIVE_HIGH   1
 
 // PWRKEY darbe süreleri (ms) — SIMCom A76xx ailesi için pratik değerler
 #define PWRKEY_ON_MS      1500    // Açma darbesi  (~1.0-1.5 s)
@@ -150,6 +150,9 @@ public:
 
     // Online sağlayıcı ayarı
     void   setApiKey(const String &key, LbsProvider provider = LBS_UNWIRED);
+    // getLocation() sırasını çevirir: önce online API, olmazsa modem LBS.
+    // AT+CLBS çalışırken online sağlayıcıyı test etmek/karşılaştırmak için.
+    void   setPreferOnline(bool enabled);
     void   setUnwiredEndpoint(const String &url);   // us1/eu1/ap1 bölge seçimi
 
     // Google Maps bağlantısı üretir
@@ -177,6 +180,7 @@ private:
     bool     _debugEnabled;
 
     String      _apiKey;
+    bool        _preferOnline;
     LbsProvider _provider;
     String      _unwiredUrl;
 
@@ -194,6 +198,7 @@ private:
     static uint32_t _parseNum(String s);         // "0x1A2B" veya "12345"
     static double   _jsonNumber(const String &json, const String &key, bool *ok = nullptr);
     static String   _jsonString(const String &json, const String &key);
+    static String   _httpErrText(int code);   // +HTTPACTION kodunu insanca anlatir
 };
 
 #endif // LBSLOCATION_H

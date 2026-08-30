@@ -14,7 +14,7 @@
  * Donanım - Pin Bağlantıları (ESP32-S3):
  *   GPIO 17 (TX) -> SIM7672E RX
  *   GPIO 16 (RX) <- SIM7672E TX
- *   GPIO  4      -> SIM7672E PWRKEY
+ *   GPIO  7      -> SIM7672E PWRKEY
  *   GPIO  5      -> SIM7672E RESET
  *   GPIO 13      -> DS18B20 Data (sarı/beyaz tel)
  *   DS18B20 VCC  -> 3.3V veya 5V
@@ -43,7 +43,7 @@
 
 OneWire           oneWire(DS18B20_PIN);
 DallasTemperature sensors(&oneWire);
-SmsTemperature    gsm(17, 16, 4, 5);
+SmsTemperature    gsm(17, 16, 7, 5);
 
 // ============================================================
 //  SICAKLIK OKU

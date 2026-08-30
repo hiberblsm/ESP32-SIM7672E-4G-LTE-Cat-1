@@ -31,11 +31,11 @@ bool MqttTest::begin(long baud) {
     _serial->begin(baud, SERIAL_8N1, _rxPin, _txPin);
     if (_pwrKeyPin != 255) {
         pinMode(_pwrKeyPin, OUTPUT);
-        digitalWrite(_pwrKeyPin, HIGH);
+        _pwrKeySet(false);          // boşta: tuş bırakılmış
     }
     if (_resetPin != 255) {
         pinMode(_resetPin, OUTPUT);
-        digitalWrite(_resetPin, HIGH);
+        _resetSet(false);           // boşta: reset serbest
     }
 
     delay(1000);
@@ -57,14 +57,14 @@ bool MqttTest::begin(long baud) {
     if (!alive) {
         if (_pwrKeyPin != 255) {
             debugPrint("Modem yanit yok, PWRKEY ile guc veriliyor...");
-            digitalWrite(_pwrKeyPin, LOW);
-            delay(1600);
-            digitalWrite(_pwrKeyPin, HIGH);
-            debugPrint("PWRKEY HIGH, boot bekleniyor (8s)...");
-            delay(8000);
+            _pwrKeySet(true);
+            delay(PWRKEY_ON_MS);
+            _pwrKeySet(false);
+            debugPrint("PWRKEY birakildi, boot bekleniyor...");
+            delay(PWRKEY_BOOT_MS);
         } else {
-            debugPrint("Modem yanit yok, PWRKEY yok — boot icin 8s bekleniyor...");
-            delay(8000);
+            debugPrint("Modem yanit yok, PWRKEY yok — boot bekleniyor...");
+            delay(PWRKEY_BOOT_MS);
         }
         clearBuffer();
     }
@@ -88,9 +88,9 @@ bool MqttTest::begin(long baud) {
 
 void MqttTest::powerOn() {
     if (_pwrKeyPin == 255) { debugPrint("powerOn: PWRKEY pin yok, atlaniyor."); return; }
-    digitalWrite(_pwrKeyPin, LOW);
-    delay(1500);
-    digitalWrite(_pwrKeyPin, HIGH);
+    _pwrKeySet(true);
+    delay(PWRKEY_ON_MS);
+    _pwrKeySet(false);
     delay(5000);
 }
 
@@ -98,9 +98,9 @@ void MqttTest::powerOff() {
     sendAT("AT+CPOF", 3000);
     if (_pwrKeyPin != 255) {
         delay(1000);
-        digitalWrite(_pwrKeyPin, LOW);
-        delay(2500);
-        digitalWrite(_pwrKeyPin, HIGH);
+        _pwrKeySet(true);
+        delay(PWRKEY_OFF_MS);
+        _pwrKeySet(false);
     }
 }
 
@@ -111,9 +111,9 @@ void MqttTest::hardReset() {
         pinMode(_txPin, OUTPUT);
         digitalWrite(_txPin, HIGH);
         delay(50);
-        digitalWrite(_resetPin, LOW);
+        _resetSet(true);
         delay(300);
-        digitalWrite(_resetPin, HIGH);
+        _resetSet(false);
         delay(6000);
         begin();
         debugPrint("Hard reset tamam (HW RESET pin)");
@@ -206,6 +206,36 @@ void MqttTest::clearBuffer() {
         }
         yield();
     }
+}
+
+// PWRKEY "tuşa bas / bırak". Modülde pin aktif-düşüktür; araya NPN girdiğinde
+// GPIO seviyesi tersine döner (PWRKEY_ACTIVE_HIGH).
+void MqttTest::_pwrKeySet(bool pressed) {
+    if (_pwrKeyPin == 255) return;
+#if PWRKEY_ACTIVE_HIGH
+    digitalWrite(_pwrKeyPin, pressed ? HIGH : LOW);
+#else
+    digitalWrite(_pwrKeyPin, pressed ? LOW : HIGH);
+#endif
+}
+
+// RESET pini de aktif-düşüktür; NPN varsa aynı şekilde terslenir.
+void MqttTest::_resetSet(bool asserted) {
+    if (_resetPin == 255) return;
+#if RESET_ACTIVE_HIGH
+    digitalWrite(_resetPin, asserted ? HIGH : LOW);
+#else
+    digitalWrite(_resetPin, asserted ? LOW : HIGH);
+#endif
+}
+
+void MqttTest::powerKeyPulse(uint16_t ms) {
+    if (_pwrKeyPin == 255) { debugPrint("powerKeyPulse: PWRKEY pin yok"); return; }
+    pinMode(_pwrKeyPin, OUTPUT);
+    debugPrint("PWRKEY darbesi: " + String(ms) + " ms");
+    _pwrKeySet(true);
+    delay(ms);
+    _pwrKeySet(false);
 }
 
 void MqttTest::_exitDataModeAndDrain() {

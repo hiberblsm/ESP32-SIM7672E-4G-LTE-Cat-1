@@ -12,7 +12,7 @@
  * Donanım - Pin Bağlantıları (ESP32-S3):
  *   GPIO 17 (TX) -> SIM7672E RX
  *   GPIO 16 (RX) <- SIM7672E TX
- *   GPIO  4      -> SIM7672E PWRKEY
+ *   GPIO  7      -> SIM7672E PWRKEY
  *   GPIO  5      -> SIM7672E RESET
  *   GPIO  6      -> Röle 1 (IN1)
  *   GPIO  7      -> Röle 2 (IN2)
@@ -29,9 +29,9 @@
 
 // Röle pin numaraları (ESP32-S3 GPIO)
 // NOT: ESP32-S3'te GPIO 22-25 YOKTUR; GPIO 26-37 flash/PSRAM (OPI) tarafından
-// kullanılır. Serbest pinler: GPIO 6 ve 7.
+// kullanilir. GPIO 7 = PWRKEY oldugu icin Role 2 GPIO 15'tedir.
 #define R1_PIN  6
-#define R2_PIN  7
+#define R2_PIN  15
 
 // Röle shield tipi:
 //   RELAY_ACTIVE_HIGH (varsayılan) → pin HIGH olduğunda röle AÇILIR
@@ -59,7 +59,7 @@
   #define ROL_KAPAT HIGH
 #endif
 
-DtmfRelay gsm(17, 16, 4, 5);
+DtmfRelay gsm(17, 16, 7, 5);
 
 const uint8_t ROLE_PINLERI[2] = {R1_PIN, R2_PIN};
 bool rolAcik[2] = {false, false};

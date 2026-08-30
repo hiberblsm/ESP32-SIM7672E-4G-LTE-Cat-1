@@ -22,7 +22,7 @@
  * Bağlantılar (ESP32-S3):
  *   GPIO 17 (TX) -> SIM7672E RX
  *   GPIO 16 (RX) <- SIM7672E TX
- *   GPIO  4      -> SIM7672E PWRKEY
+ *   GPIO  7      -> SIM7672E PWRKEY
  *   GPIO  5      -> SIM7672E RESET
  *
  * Serial Monitor: 115200 baud
@@ -31,19 +31,25 @@
 #include <Arduino.h>
 #include "10_LbsLocation.h"
 
-LbsLocation gsm(17, 16, 4, 5);  // txPin, rxPin, pwrKeyPin, resetPin
+LbsLocation gsm(17, 16, 7, 5);  // txPin, rxPin, pwrKeyPin, resetPin
 
 // ====== AYARLAR ======
 // APN: Turkcell/Vodafone: "internet", Turk Telekom: "tt"
 const char APN_STR[] = "internet";
 
-// Online hücre veritabanı API anahtarı.
-// Ücretsiz anahtar: https://unwiredlabs.com  (veya https://opencellid.org)
-// Boş bırakılırsa yalnızca modem içi LBS (AT+CLBS) denenir.
+// Online hücre veritabanı API anahtarı — ÇOĞU KULLANICI İÇİN GEREKSİZ.
+// Modem içi LBS (AT+CLBS) anahtarsız çalışıyorsa buraya hiçbir şey yazmayın.
+// Yalnızca AT+CLBS desteklenmeyen bir firmware'de yedek olarak gerekir.
+// Ücretsiz anahtar: https://unwiredlabs.com  veya  https://my.opencellid.org
 const char LBS_API_KEY[] = "";
 
 // Sağlayıcı: LBS_UNWIRED (POST) veya LBS_OPENCELLID (GET)
 const LbsProvider LBS_PROVIDER = LBS_UNWIRED;
+
+// false → önce AT+CLBS (önerilen). Başarılı olursa online API HİÇ çağrılmaz,
+//          bu yüzden sağlayıcı panelinizde istek görünmez — normaldir.
+// true  → önce online API. Sağlayıcıyı test etmek/karşılaştırmak için.
+const bool PREFER_ONLINE = false;
 
 // Konum tazeleme periyodu
 const uint32_t LOOP_PERIOD_MS = 60000;
@@ -166,7 +172,9 @@ void setup() {
     // Online sağlayıcıyı tanıt (anahtar boşsa yalnız AT+CLBS denenir)
     if (strlen(LBS_API_KEY) > 0) {
         gsm.setApiKey(LBS_API_KEY, LBS_PROVIDER);
-        Serial.println("  Online hucre veritabani: AKTIF");
+        gsm.setPreferOnline(PREFER_ONLINE);
+        Serial.print("  Online hucre veritabani: AKTIF");
+        Serial.println(PREFER_ONLINE ? "  (once online)" : "  (once AT+CLBS)");
     } else {
         Serial.println("  Online hucre veritabani: KAPALI (LBS_API_KEY bos)");
     }

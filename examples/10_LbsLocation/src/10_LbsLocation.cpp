@@ -13,7 +13,7 @@
 LbsLocation::LbsLocation(uint8_t txPin, uint8_t rxPin,
                          uint8_t pwrKeyPin, uint8_t resetPin)
     : _txPin(txPin), _rxPin(rxPin), _pwrKeyPin(pwrKeyPin), _resetPin(resetPin),
-      _debugEnabled(true), _provider(LBS_UNWIRED),
+      _debugEnabled(true), _provider(LBS_UNWIRED), _preferOnline(false),
       _unwiredUrl("https://us1.unwiredlabs.com/v2/process.php")
 {
     _serial = &Serial2;
@@ -688,11 +688,29 @@ String LbsLocation::_jsonString(const String &json, const String &key) {
     return json.substring(q1 + 1, q2);
 }
 
+// +HTTPACTION kodunu okunabilir hale getirir.
+// SIMCom 7xx aralığını MODEM ÜRETİR — sunucudan gelen bir HTTP durumu değildir.
+String LbsLocation::_httpErrText(int code) {
+    if (code == 0)   return "yanit yok (zaman asimi)";
+    if (code >= 700) return "modem tarafi hata — istek sunucuya ulasamadi "
+                            "(genellikle TLS el sikismasi basarisiz). "
+                            "Bu bir sunucu yaniti DEGILDIR.";
+    if (code == 301 || code == 302) return "yonlendirme (REDIR destegi gerekir)";
+    if (code == 401 || code == 403) return "API anahtari gecersiz veya yetkisiz";
+    if (code == 404) return "adres bulunamadi";
+    if (code >= 500) return "sunucu hatasi";
+    return "beklenmeyen HTTP kodu";
+}
+
 // ==================== HÜCRESEL KONUM (LBS) ====================
 
 void LbsLocation::setApiKey(const String &key, LbsProvider provider) {
     _apiKey   = key;
     _provider = provider;
+}
+
+void LbsLocation::setPreferOnline(bool enabled) {
+    _preferOnline = enabled;
 }
 
 void LbsLocation::setUnwiredEndpoint(const String &url) {
@@ -799,7 +817,7 @@ bool LbsLocation::_queryUnwired(const CellInfo &info, GeoFix &fix) {
 
     int code = httpAction(1);   // POST
     if (code != 200) {
-        fix.error = "HTTP kodu: " + String(code);
+        fix.error = "HTTP " + String(code) + ": " + _httpErrText(code);
         httpTerm();
         return false;
     }
@@ -844,7 +862,7 @@ bool LbsLocation::_queryOpenCellId(const CellInfo &info, GeoFix &fix) {
 
     int code = httpAction(0);   // GET
     if (code != 200) {
-        fix.error = "HTTP kodu: " + String(code);
+        fix.error = "HTTP " + String(code) + ": " + _httpErrText(code);
         httpTerm();
         return false;
     }
@@ -898,11 +916,20 @@ bool LbsLocation::getLocation(GeoFix &fix, CellInfo *outInfo) {
     getCellInfo(info);
     if (outInfo) *outInfo = info;
 
-    // 1) Modem içi LBS
+    // Sıra: varsayılan olarak önce modem LBS (bedava, hızlı), sonra online.
+    // setPreferOnline(true) ile sıra çevrilir — online sağlayıcıyı test etmek
+    // veya iki kaynağı karşılaştırmak istediğinizde.
+    if (_preferOnline && _apiKey.length() > 0) {
+        if (lbsQueryOnline(info, fix)) return true;
+        String firstErr = fix.error;
+        if (lbsQueryModem(fix)) return true;
+        if (firstErr.length()) fix.error = firstErr + " | " + fix.error;
+        return false;
+    }
+
     if (lbsQueryModem(fix)) return true;
     String firstErr = fix.error;
 
-    // 2) Online hücre veritabanı
     if (lbsQueryOnline(info, fix)) return true;
 
     if (fix.error.length() == 0) fix.error = firstErr;
