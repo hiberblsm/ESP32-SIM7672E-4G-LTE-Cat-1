@@ -700,6 +700,15 @@ bool MqttTest::mqttConnect(const String &broker, uint16_t port,
     _mqttBroker = broker;
     _mqttPort   = port;
 
+    // CONNECT tek baytlık Remaining Length ile 128 baytlık tampona sığmalı
+    size_t need = 12 + clientId.length()
+                + (user.length() ? 2 + user.length() : 0)
+                + (pass.length() ? 2 + pass.length() : 0);
+    if (need > 127) {
+        debugPrint("HATA: CONNECT paketi cok uzun (" + String(need) + " byte)");
+        return false;
+    }
+
     if (!tcpConnect(broker, port)) return false;
     delay(1000);
 
@@ -788,11 +797,15 @@ bool MqttTest::mqttPublish(const String &topic, const String &payload) {
     if (!_mqttConnected) return false;
     debugPrint("MQTT Publish: " + topic + " = " + payload);
 
-    uint8_t packet[256];
+    uint32_t remainLen = 2 + topic.length() + payload.length();
+    uint8_t packet[512];
+    if (1 + 4 + remainLen > sizeof(packet)) {
+        debugPrint("HATA: Publish paketi cok uzun (" + String(remainLen) + " byte)");
+        return false;
+    }
     size_t idx = 0;
 
     packet[idx++] = MQTT_PUBLISH;
-    uint32_t remainLen = 2 + topic.length() + payload.length();
     idx += _encodeRemLen(remainLen, &packet[idx]);
 
     packet[idx++] = (topic.length() >> 8) & 0xFF;
@@ -814,11 +827,15 @@ bool MqttTest::mqttSubscribe(const String &topic) {
     if (!_mqttConnected) return false;
     debugPrint("MQTT Subscribe: " + topic);
 
+    uint32_t remainLen = 2 + 2 + topic.length() + 1;
     uint8_t packet[128];
+    if (1 + 4 + remainLen > sizeof(packet)) {
+        debugPrint("HATA: Subscribe topic cok uzun");
+        return false;
+    }
     size_t idx = 0;
 
     packet[idx++] = MQTT_SUBSCRIBE;
-    uint32_t remainLen = 2 + 2 + topic.length() + 1;
     idx += _encodeRemLen(remainLen, &packet[idx]);
 
     packet[idx++] = 0x00; packet[idx++] = 0x01;  // Packet ID
@@ -872,7 +889,9 @@ String MqttTest::mqttLoop(uint32_t timeoutMs) {
         if (qos > 0) pos += 2;
 
         // Payload uzunluğu = remLen - topic(2) - topicLen - (packetId varsa 2)
-        uint32_t plen = remLen - 2 - topicLen - (qos > 0 ? 2 : 0);
+        uint32_t hdr  = 2 + topicLen + (qos > 0 ? 2 : 0);
+        if (remLen < hdr) break;
+        uint32_t plen = remLen - hdr;
         String payload = raw.substring(pos, pos + plen);
         return topic + ": " + payload;
     }

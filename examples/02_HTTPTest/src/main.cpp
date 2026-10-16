@@ -25,7 +25,7 @@
 HttpTest gsm(17, 16, 7, 5);  // txPin, rxPin, pwrKeyPin, resetPin
 
 // ====== AYARLAR ======
-// APN: Turkcell/Vodafone: "internet", Turk Telekom: "tt"
+// APN: operatörün veri APN değeri
 const char APN_STR[]   = "internet";
 const char DEVICE_ID[] = "esp32-sim7672e";
 // =====================
