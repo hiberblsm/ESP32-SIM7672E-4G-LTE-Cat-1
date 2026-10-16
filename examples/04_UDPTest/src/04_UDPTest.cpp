@@ -576,6 +576,19 @@ String UdpTest::_cipReceive(uint32_t timeoutMs) {
     }
     rawBuf[rawLen] = '\0';
 
+    // SIM7672E veri formatı: "+IPD<uzunluk>\r\n<data>"
+    char *ipd = strstr(rawBuf, "+IPD");
+    if (ipd) {
+        char  *p       = ipd + 4;
+        size_t dataLen = 0;
+        while (*p >= '0' && *p <= '9') { dataLen = dataLen * 10 + (*p - '0'); p++; }
+        if (dataLen > 0 && (*p == '\r' || *p == '\n')) {
+            while (*p == '\r' || *p == '\n') p++;
+            size_t avail = rawLen - (size_t)(p - rawBuf);
+            return String(p, dataLen < avail ? dataLen : avail);
+        }
+    }
+
     // UDP'de veri +IPD<id>,<len>:... veya +IPUDP<id>,<len>:... ile gelir
     char marker[16];
     snprintf(marker, sizeof(marker), "+IPD%d,", CIP_IDX);
